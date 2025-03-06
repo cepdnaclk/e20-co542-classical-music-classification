@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Upload</title>
+</head>
+<body>
+    <h2>Upload Audio File</h2>
+    <input type="file" id="audioFile">
+    <button onclick="uploadAudio()">Upload</button>
+    <p id="response"></p>
+
+    <script>
+        function uploadAudio() {
+            let fileInput = document.getElementById("audioFile");
+            let file = fileInput.files[0];
+
+            let formData = new FormData();
+            formData.append("audio", file);
+
+            fetch("http://127.0.0.1:5000/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("response").innerHTML = 
+                    `<strong>Predicted Genre:</strong> ${data.genre}`;
+            })
+            .catch(error => console.error("Error:", error));
+        }
+    </script>
+</body>
+</html>
