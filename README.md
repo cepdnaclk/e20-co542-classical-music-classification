@@ -23,6 +23,7 @@ GTZAN – A well-known dataset with multiple genres, from which we use non-class
 🛠️ Technologies Used
 
 Python
+
 TensorFlow – Deep learning framework for training the neural network.
 Librosa – Audio analysis and feature extraction (MFCC, spectrograms).
 NumPy & Pandas – Data manipulation and numerical operations.
