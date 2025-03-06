@@ -2,7 +2,7 @@ import os
 import numpy as np
 import librosa
 import sys
-import tensorflow as tf  # Assuming TensorFlow is used
+import tensorflow as tf  
 
 # Load pre-trained model
 loaded_model = tf.keras.models.load_model("music_classification_model.h5")
@@ -19,8 +19,7 @@ def extract_mfcc(audio_path, sr=22050, n_mfcc=20, max_length=130):
     return mfcc
 
 # Path to the audio file
-#C:\Users\sheha\OneDrive\Documents\GitHub\e20-co542-classical-music-classification\code\test.py
-audio_path = "Make-a-Wish-Calm-Classical-Music-chosic.com_.mp3"  # Replace with actual file path
+audio_path = "data/Make-a-Wish-Calm-Classical-Music-chosic.com_.mp3" 
 
 if not os.path.exists(audio_path):
     sys.exit("Exiting, file not found!")
@@ -29,7 +28,7 @@ if not os.path.exists(audio_path):
 mfcc = extract_mfcc(audio_path)
 
 # Normalize (ensure mean_train & std_train are precomputed or manually set)
-mean_train, std_train = 0, 1  # Adjust based on training data if needed
+mean_train, std_train = 0, 1  
 mfcc = (mfcc - mean_train) / np.where(std_train == 0, 1, std_train)
 
 # Reshape for model input
