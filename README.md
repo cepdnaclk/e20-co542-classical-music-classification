@@ -61,4 +61,6 @@ Use the scripts in `code/final codes` to deploy the trained model as a real-time
 
 Notes:
 - The endpoint expects WAV input (`ContentType=audio/wav`).
+- Deployment now packages a SageMaker-compatible SavedModel at `1/` automatically.
+- If `models/gtzan_cnn.keras` contains Keras `quantization_config` fields, the deploy script sanitizes them before exporting SavedModel.
 - Model artifacts are packaged automatically from `models/` and `data/processed/classes.npy`.
