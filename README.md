@@ -39,3 +39,26 @@ MFCC-based feature extraction to capture audio characteristics.
 Preprocessing pipeline for handling MusicNet and GTZAN datasets.
 Neural network model trained to classify classical vs. non-classical music.
 Training and evaluation scripts with accuracy tracking and performance metrics.
+
+## Deploy to AWS SageMaker
+
+Use the scripts in `code/final codes` to deploy the trained model as a real-time endpoint.
+
+1. Install deployment dependencies:
+   ```bash
+   pip install -r "code/final codes/requirements-deploy.txt"
+   ```
+
+2. Deploy endpoint (replace the role ARN):
+   ```bash
+   python "code/final codes/deploy_sagemaker.py" --role-arn "arn:aws:iam::<ACCOUNT_ID>:role/<SAGEMAKER_ROLE>"
+   ```
+
+3. Invoke endpoint with a WAV file:
+   ```bash
+   python "code/final codes/invoke_endpoint.py" --endpoint-name "<ENDPOINT_NAME>" --audio-path "path/to/sample.wav"
+   ```
+
+Notes:
+- The endpoint expects WAV input (`ContentType=audio/wav`).
+- Model artifacts are packaged automatically from `models/` and `data/processed/classes.npy`.
