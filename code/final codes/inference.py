@@ -51,12 +51,12 @@ def _load_audio_from_bytes(payload):
 
 
 def model_fn(model_dir):
-    model_path = Path(model_dir) / "gtzan_cnn.h5"
-    model = tf.keras.models.load_model(model_path)
+    saved_model = tf.saved_model.load(str(Path(model_dir) / "1"))
+    infer = saved_model.signatures["serving_default"]
     mean = np.load(Path(model_dir) / "mfcc_mean.npy")[0]
     std = np.load(Path(model_dir) / "mfcc_std.npy")[0]
     classes = np.load(Path(model_dir) / "classes.npy", allow_pickle=True)
-    return {"model": model, "mean": mean, "std": std, "classes": classes}
+    return {"infer": infer, "mean": mean, "std": std, "classes": classes}
 
 
 def input_fn(request_body, request_content_type):
@@ -66,7 +66,7 @@ def input_fn(request_body, request_content_type):
 
 
 def predict_fn(input_data, model_bundle):
-    model = model_bundle["model"]
+    infer = model_bundle["infer"]
     mean = model_bundle["mean"]
     std = model_bundle["std"]
     classes = model_bundle["classes"]
@@ -75,9 +75,10 @@ def predict_fn(input_data, model_bundle):
     feats = [_mfcc_segment(seg, SR) for seg in segments]
     X = np.stack(feats)
     X = (X - mean) / (std + 1e-8)
-    X = X[..., np.newaxis]
+    X = X[..., np.newaxis].astype(np.float32)
 
-    probs = model.predict(X, verbose=0)
+    outputs = infer(tf.constant(X))
+    probs = next(iter(outputs.values())).numpy()
     avg_probs = probs.mean(axis=0)
     pred_idx = int(avg_probs.argmax())
 

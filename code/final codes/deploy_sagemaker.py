@@ -1,9 +1,93 @@
-from pathlib import Path
-import tarfile
 import argparse
+import json
+import shutil
+import tarfile
+import tempfile
+import zipfile
+from pathlib import Path
 
 import sagemaker
+import tensorflow as tf
+from keras.layers import Dense as KerasDense
 from sagemaker.tensorflow import TensorFlowModel
+
+
+class DenseCompat(KerasDense):
+    """Backwards-compatible Dense layer that ignores unknown quantization args."""
+
+    def __init__(self, *args, quantization_config=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+def _strip_quantization_config(node):
+    if isinstance(node, dict):
+        node.pop("quantization_config", None)
+        for value in node.values():
+            _strip_quantization_config(value)
+    elif isinstance(node, list):
+        for value in node:
+            _strip_quantization_config(value)
+
+
+def _sanitize_keras_archive(src: Path) -> Path:
+    """Return a temporary .keras copy with incompatible keys removed."""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="keras_sanitize_"))
+    unpack_dir = tmp_dir / "unpacked"
+    unpack_dir.mkdir(parents=True, exist_ok=True)
+    sanitized = tmp_dir / src.name
+
+    with zipfile.ZipFile(src, "r") as zf:
+        zf.extractall(unpack_dir)
+
+    config_path = unpack_dir / "config.json"
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    _strip_quantization_config(cfg)
+    config_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    with zipfile.ZipFile(sanitized, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in unpack_dir.rglob("*"):
+            if file_path.is_file():
+                zf.write(file_path, file_path.relative_to(unpack_dir))
+    return sanitized
+
+
+def _load_keras_model(model_path: Path):
+    try:
+        return tf.keras.models.load_model(
+            model_path,
+            compile=False,
+            custom_objects={"Dense": DenseCompat},
+        )
+    except Exception:
+        sanitized = _sanitize_keras_archive(model_path)
+        return tf.keras.models.load_model(
+            sanitized,
+            compile=False,
+            custom_objects={"Dense": DenseCompat},
+        )
+
+
+def _prepare_saved_model(staging: Path, models_dir: Path) -> None:
+    """Create SageMaker TF Serving layout: model version directory `1/`."""
+    saved_model_src = models_dir / "saved_model" / "1"
+    if saved_model_src.exists():
+        shutil.copytree(saved_model_src, staging / "1", dirs_exist_ok=True)
+        return
+
+    keras_model_path = models_dir / "gtzan_cnn.keras"
+    h5_model_path = models_dir / "gtzan_cnn.h5"
+
+    if keras_model_path.exists():
+        model = _load_keras_model(keras_model_path)
+    elif h5_model_path.exists():
+        model = tf.keras.models.load_model(h5_model_path, compile=False)
+    else:
+        raise FileNotFoundError(
+            "Missing model file. Expected one of: "
+            f"{saved_model_src}, {keras_model_path}, {h5_model_path}"
+        )
+
+    tf.saved_model.save(model, str(staging / "1"))
 
 
 def create_model_tar(project_root: Path, output_tar: Path) -> None:
@@ -11,7 +95,6 @@ def create_model_tar(project_root: Path, output_tar: Path) -> None:
     processed_dir = project_root / "data" / "processed"
 
     required = [
-        models_dir / "gtzan_cnn.h5",
         models_dir / "mfcc_mean.npy",
         models_dir / "mfcc_std.npy",
         processed_dir / "classes.npy",
@@ -21,13 +104,17 @@ def create_model_tar(project_root: Path, output_tar: Path) -> None:
         raise FileNotFoundError(f"Missing required model artifacts: {missing}")
 
     staging = project_root / "code" / "final codes" / "model"
+    if staging.exists():
+        shutil.rmtree(staging)
     staging.mkdir(parents=True, exist_ok=True)
 
-    (staging / "gtzan_cnn.h5").write_bytes((models_dir / "gtzan_cnn.h5").read_bytes())
+    _prepare_saved_model(staging, models_dir)
     (staging / "mfcc_mean.npy").write_bytes((models_dir / "mfcc_mean.npy").read_bytes())
     (staging / "mfcc_std.npy").write_bytes((models_dir / "mfcc_std.npy").read_bytes())
     (staging / "classes.npy").write_bytes((processed_dir / "classes.npy").read_bytes())
 
+    if output_tar.exists():
+        output_tar.unlink()
     with tarfile.open(output_tar, "w:gz") as tar:
         tar.add(staging, arcname=".")
 
@@ -53,7 +140,6 @@ def deploy(
         model_data=model_s3_uri,
         role=role_arn,
         framework_version="2.13",
-        py_version="py310",
         entry_point="inference.py",
         source_dir=str(source_dir),
         sagemaker_session=session,
